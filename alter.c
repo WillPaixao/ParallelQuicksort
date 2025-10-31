@@ -50,7 +50,9 @@ void* quicksort(void* args){
             vec->i++;
             sem_post(&vec->mutex);
         }
+        else{
         printf("not changing order, %i>%i\n",global_vec[local_arrow],global_vec[vec->end]);
+        }
     }
 }
 
