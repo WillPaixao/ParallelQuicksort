@@ -31,8 +31,14 @@ void* quicksort(void* args){
     while(1){
         sem_wait(&vec->mutex);
         if(vec->arrow==vec->end){
-            printf("Current i: %i, %i<%i<%i",vec->i,global_vec[vec->i],global_vec[vec->end],global_vec[vec->i+1]);
-            free(vec);
+            printf("Current i: %i, %i<%i<%i\n",vec->i,global_vec[vec->i],global_vec[vec->end],global_vec[vec->i+1]);
+            //if(flag==0){
+            //    temp=global_vec[vec->i];
+            //    global_vec[vec->i]=global_vec[local_arrow];
+            //    global_vec[local_arrow]=temp;
+            //    flag=1;
+            //}
+            sem_post(&vec->mutex);
             pthread_exit(NULL);
         }
         local_arrow=vec->arrow;
@@ -41,12 +47,16 @@ void* quicksort(void* args){
 
         if(global_vec[local_arrow]<global_vec[vec->end]){
             printf("changing order, %i<%i\n",global_vec[local_arrow],global_vec[vec->end]);
+            if(local_arrow==vec->i){
+                vec->i++;
+                continue;
+            }
 
             sem_wait(&vec->mutex);
             // change i with arrow
             temp=global_vec[vec->i];
-            global_vec[vec->i]=global_vec[vec->arrow];
-            global_vec[vec->arrow]=temp;
+            global_vec[vec->i]=global_vec[local_arrow];
+            global_vec[local_arrow]=temp;
             vec->i++;
             sem_post(&vec->mutex);
         }
@@ -74,7 +84,9 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < n; i++) {
         randomNumber = rand() % 1000;
         global_vec[i]=randomNumber;
+        printf("%i | ",global_vec[i]);
     }
+    printf("\n");
     queue=create_queue(0,n-1);
     pthread_t *threads = (pthread_t *)malloc(nthreads * sizeof(pthread_t));
     for (int i = 0; i < nthreads; i++) {
@@ -87,12 +99,14 @@ int main(int argc, char *argv[]) {
     }
     printf("Join finished!\n");
 
-    for (int i = 0; i < n-1; i++) {
+    for (int i = 0; i < n; i++) {
 
         if(global_vec[i]<global_vec[n-1] && global_vec[i+1]>global_vec[n-1]){
-            printf("Maybe Correct exec, if once\n");
+            //printf("Maybe Correct exec, if once\n");
         }
+        printf("%i | ",global_vec[i]);
     }
+    printf("\n");
 
     free(global_vec);
     return 0;
