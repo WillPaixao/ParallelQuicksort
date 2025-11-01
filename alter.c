@@ -6,6 +6,7 @@
 #include <time.h>
 
 int* global_vec;
+sem_t global_mutex;
 
 typedef struct {
     int start, end, arrow;
@@ -31,6 +32,12 @@ void* quicksort(void* args){
     int local_arrow, local_i;
     vec_t* vec= (vec_t*) args;
     int temp;
+    printf("Thread created\n");
+
+    sem_wait(&global_mutex);
+
+    printf("Thread started\n");
+
     while(1){
         sem_wait(&vec->mutex);
         if(vec->arrow==vec->end){
@@ -40,8 +47,15 @@ void* quicksort(void* args){
                 temp=global_vec[vec->i];
                 global_vec[vec->i]=global_vec[vec->end];
                 global_vec[vec->end]=temp;
+                //if(vec->end-vec->start>1){
+                //    //create two subcases
+                //    sem_post(&vec->mutex);
+                //    sem_post(&global_mutex);
+                //    pthread_exit(NULL);
+                //}
             }
             sem_post(&vec->mutex);
+            sem_post(&global_mutex);
             pthread_exit(NULL);
         }
         local_arrow=vec->arrow;
@@ -71,7 +85,7 @@ void* quicksort(void* args){
 }
 
 int main(int argc, char *argv[]) {
-    int nthreads,n,randomNumber,start,end,lenght;
+    int nthreads,n,randomNumber;
     vec_t* queue;
 
     srand(time(NULL));
@@ -82,7 +96,8 @@ int main(int argc, char *argv[]) {
     }
     nthreads = atoi(argv[1]);
     n = atoi(argv[2]);
-    lenght=n/nthreads;
+    
+    sem_init(&global_mutex,0,nthreads);
 
     global_vec=(int*) malloc(sizeof(int)*n);
     for (int i = 0; i < n; i++) {
@@ -113,5 +128,6 @@ int main(int argc, char *argv[]) {
     printf("\n");
 
     free(global_vec);
+    free(threads);
     return 0;
 }
