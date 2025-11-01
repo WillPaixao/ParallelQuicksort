@@ -28,6 +28,48 @@ vec_t* create_queue(int start, int end, int thread_n){
     return vec; 
 }
 
+void* quicksort(void* args);
+
+void create_thread(int start,int i, int end, int nthreads){
+    int nthreads1,nthreads2;
+    nthreads1=nthreads/2;
+    nthreads2=nthreads1+(nthreads%2);
+    nthreads1+=1*(nthreads1==0);
+    nthreads2+=1*(nthreads2==0);
+    vec_t* queue1;
+    vec_t* queue2;
+
+    queue1=create_queue(start,i,nthreads1);
+    queue2=create_queue(i,end,nthreads2);
+
+    pthread_t *threads1 = (pthread_t *)malloc(nthreads1 * sizeof(pthread_t));
+    for (int i = 0; i < nthreads1; i++) {
+        pthread_create(&threads1[i], NULL, quicksort, (void*)queue1);
+    }
+
+    pthread_t *threads2 = (pthread_t *)malloc(nthreads2 * sizeof(pthread_t));
+    for (int i = 0; i < nthreads2; i++) {
+        pthread_create(&threads2[i], NULL, quicksort, (void*)queue2);
+    }
+    printf("Creation finished!\n");
+
+    for (int i = 0; i < nthreads1; i++) {
+        pthread_join(threads1[i], NULL);
+    }
+
+    for (int i = 0; i < nthreads2; i++) {
+        pthread_join(threads2[i], NULL);
+    }
+    printf("Join finished!\n");
+
+    free(threads1);
+    free(threads2);
+    free(queue1);
+    free(queue2);
+
+    return;
+}
+
 void* quicksort(void* args){
     int local_arrow, local_i;
     vec_t* vec= (vec_t*) args;
@@ -47,12 +89,12 @@ void* quicksort(void* args){
                 temp=global_vec[vec->i];
                 global_vec[vec->i]=global_vec[vec->end];
                 global_vec[vec->end]=temp;
-                //if(vec->end-vec->start>1){
-                //    //create two subcases
-                //    sem_post(&vec->mutex);
-                //    sem_post(&global_mutex);
-                //    pthread_exit(NULL);
-                //}
+                if(vec->end-vec->start>1){
+                    create_thread(vec->start,vec->i,vec->end,vec->thread_n);
+                    sem_post(&vec->mutex);
+                    sem_post(&global_mutex);
+                    pthread_exit(NULL);
+                }
             }
             sem_post(&vec->mutex);
             sem_post(&global_mutex);
