@@ -10,34 +10,37 @@ int* global_vec;
 typedef struct {
     int start, end, arrow;
     int i;
+    int thread_n,finished;
     sem_t mutex;
 } vec_t;
 
-vec_t* create_queue(int start, int end){
+vec_t* create_queue(int start, int end, int thread_n){
     vec_t* vec;
     vec= (vec_t*) malloc(sizeof(vec_t));
     vec->start=start;
     vec->end=end;
     vec->arrow=start;
     vec->i=start;
+    vec->thread_n=thread_n;
+    vec->finished=0;
     sem_init(&vec->mutex,0,1);
     return vec; 
 }
 
 void* quicksort(void* args){
-    int local_arrow;
+    int local_arrow, local_i;
     vec_t* vec= (vec_t*) args;
     int temp;
     while(1){
         sem_wait(&vec->mutex);
         if(vec->arrow==vec->end){
-            printf("Current i: %i, %i<%i<%i\n",vec->i,global_vec[vec->i],global_vec[vec->end],global_vec[vec->i+1]);
-            //if(flag==0){
-            //    temp=global_vec[vec->i];
-            //    global_vec[vec->i]=global_vec[local_arrow];
-            //    global_vec[local_arrow]=temp;
-            //    flag=1;
-            //}
+            //printf("Current i: %i, %i<%i<%i\n",vec->i,global_vec[vec->i],global_vec[vec->end],global_vec[vec->i+1]);
+            vec->finished++;
+            if(vec->finished==vec->thread_n){
+                temp=global_vec[vec->i];
+                global_vec[vec->i]=global_vec[vec->end];
+                global_vec[vec->end]=temp;
+            }
             sem_post(&vec->mutex);
             pthread_exit(NULL);
         }
@@ -53,12 +56,13 @@ void* quicksort(void* args){
             }
 
             sem_wait(&vec->mutex);
-            // change i with arrow
-            temp=global_vec[vec->i];
-            global_vec[vec->i]=global_vec[local_arrow];
-            global_vec[local_arrow]=temp;
+            local_i=vec->i;
             vec->i++;
             sem_post(&vec->mutex);
+             // change i with arrow
+            temp=global_vec[local_i];
+            global_vec[local_i]=global_vec[local_arrow];
+            global_vec[local_arrow]=temp;
         }
         else{
         printf("not changing order, %i>%i\n",global_vec[local_arrow],global_vec[vec->end]);
@@ -87,7 +91,7 @@ int main(int argc, char *argv[]) {
         printf("%i | ",global_vec[i]);
     }
     printf("\n");
-    queue=create_queue(0,n-1);
+    queue=create_queue(0,n-1,nthreads);
     pthread_t *threads = (pthread_t *)malloc(nthreads * sizeof(pthread_t));
     for (int i = 0; i < nthreads; i++) {
         pthread_create(&threads[i], NULL, quicksort, (void*)queue);
