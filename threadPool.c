@@ -9,29 +9,29 @@
 POOL populatePool(POOL pool);
 void* threadFunc(void* args);
 int recruitThreads(POOL pool, TASK task);
-void destroyPool(POOL pool);
 
 // Thread pool
 typedef struct pool_s {
   // User defined parameters
-  int nThreads;            // Number of threads in the pool
-  int maxWorkers;          // Maximum number of workers that can be allocated to a single task
-  void (*taskFunc)(TASK);  // Function that operates on data of a TASK
+  int nThreads;                       // Number of threads in the pool
+  int maxWorkers;                     // Maximum number of workers that can be allocated to a single task
+  void (*taskFunc)(TASK, int, POOL);  // Function that operates on data of a TASK
   
   // Control variables
-  QUEUE queue;             // Internal task queue
-  pthread_t* tids;         // Array of thread IDs in the pool
-  int nAvailableThreads;   // Number of current non-sleeping threads
-  char shutdown;           // Indicator of pool shutdown
+  QUEUE queue;                        // Internal task queue
+  pthread_t* tids;                    // Array of thread IDs in the pool
+  int nAvailableThreads;              // Number of current sleeping threads
+  char shutdown;                      // Indicator of pool shutdown
 
   // Locks & condition variables
-  pthread_cond_t sleeping; // Condition variable that implements on-demand task picking
-  pthread_mutex_t lock;    // Mutex lock to inhibit data racing
+  pthread_cond_t sleeping;            // Condition variable that implements on-demand task picking
+  pthread_mutex_t lock;               // Mutex lock to inhibit data racing
 } pool_t;
 
 // Makes a thread pool.
 // Returns a pointer to the pool in success, NULL if an error occurred.
-POOL makePool(int nThreads, int maxWorkers, void (*taskFunc)(TASK)){
+// OBS.: The parameter taskFunc must be a pointer to a function that expects a task and a local task TID as arguments.
+POOL makePool(int nThreads, int maxWorkers, void (*taskFunc)(TASK, int, POOL)){
   if (nThreads <= 0 ||
       maxWorkers <= 0 ||
       maxWorkers > nThreads ||
@@ -99,7 +99,9 @@ void* threadFunc(void* args){
 
   // Control variables for the recruiting phase
   static char isRecruiting = 0;
-  static int nPendingWorkers;
+  static int nAllocatedWorkers;
+  static int taskTIDGlobal;
+  int taskTIDLocal;
 
   // Local references to synchronization variables
   pthread_mutex_t* lockPtr = &pool->lock;
@@ -121,22 +123,31 @@ void* threadFunc(void* args){
     if (!isRecruiting){ // If not in recruiting phase, acquire a pending task and recruit
       isRecruiting = 1;
       currTaskGlobal = takeTask(pool->queue);
-      nPendingWorkers = recruitThreads(pool, currTaskGlobal);
+      nAllocatedWorkers = recruitThreads(pool, currTaskGlobal);
+      taskTIDGlobal = 0;
     }
     else { // Else, account for my recruitment
-      nPendingWorkers--;
+      taskTIDGlobal++;
     }
 
-    currTaskLocal = currTaskGlobal; // Assigning to a local copy
+    // Assigning to local copies
+    currTaskLocal = currTaskGlobal;
+    taskTIDLocal = taskTIDGlobal;
 
-    if (nPendingWorkers == 0){ // If there is no one left to recruit...
-      isRecruiting = 0;        // ... end the recruiting phase...
-      currTaskGlobal = NULL;   // ... and reset the task at hand, for safety
+    // If there is no one left to recruit...
+    if (nAllocatedWorkers == taskTIDLocal){
+      isRecruiting = 0;      // ... end the recruiting phase...
+      taskTIDGlobal = 0;     // ... reset the global task TID...
+      currTaskGlobal = NULL; // ... and reset the task at hand, for safety
     }
 
     pthread_mutex_unlock(lockPtr);
 
-    pool->taskFunc(currTaskLocal); // Finally, execute the task (concurrently)
+    pool->taskFunc(currTaskLocal, taskTIDLocal, pool); // Finally, execute the task (concurrently)
+
+    pthread_mutex_lock(lockPtr);
+    pool->nAvailableThreads++; // After doing the task, becomes available
+    pthread_mutex_unlock(lockPtr);
   }
 
   pthread_exit(NULL);
@@ -150,8 +161,8 @@ void executeTask(TASK task, POOL pool){
   putTask(task, pool->queue);
 
   pthread_mutex_lock(&pool->lock);
-  pthread_cond_signal(&pool->sleeping);
   pool->nAvailableThreads--;
+  pthread_cond_signal(&pool->sleeping);
   pthread_mutex_unlock(&pool->lock);
 }
 
@@ -164,50 +175,46 @@ int recruitThreads(POOL pool, TASK task){
   
   pthread_cond_t* sleepingPtr = &pool->sleeping;
   int nAvailableThreads = pool->nAvailableThreads;
-  int maxWorkers = pool->maxWorkers;
+  int maxWorkers = pool->maxWorkers - 1; // Maximum number of extra workers allocatable
   int nAllocatedWorkers = min(nAvailableThreads, maxWorkers);
 
-  for (int i = 0; i < nAllocatedWorkers; i++){
+  pool->nAvailableThreads -= nAllocatedWorkers;
+  for (int i = 0; i < nAllocatedWorkers; i++)
     pthread_cond_signal(sleepingPtr);
-    nAvailableThreads--;
-  }
   
   task->nWorkers = nAllocatedWorkers + 1; // Plus one accounting for the recruiter
-  pool->nAvailableThreads = nAvailableThreads;
+  task->nFinishedWorkers = 0;
 
   return nAllocatedWorkers;
 }
 
 // Shutdown the pool, forcing threads to start ending activity.
-// This also waits for the threads to return.
 void shutdownPool(POOL pool){
   if (!pool)
     return;
 
   pthread_mutex_t* lockPtr = &pool->lock;
   pthread_cond_t* sleepingPtr = &pool->sleeping;
-  int nThreads = pool->nThreads;
-  pthread_t* tids = pool->tids;
 
   pthread_mutex_lock(lockPtr);
   pool->shutdown = 1;
   pthread_cond_broadcast(sleepingPtr); // Signaling all threads to prepare for leaving
   pthread_mutex_unlock(lockPtr);
+}
+
+// Waits the joining of threads and destroys the pool.
+void waitPoolShutdown(POOL pool){
+  if (!pool)
+    return;
+
+  int nThreads = pool->nThreads;
+  pthread_t* tids = pool->tids;
 
   for (int i = 0; i < nThreads; i++){
     if (pthread_join(tids[i], NULL)){
       // TODO: think of a good error handling here
     }
   }
-
-  destroyPool(pool);
-}
-
-// Destroys the pool.
-// Assumes that no threads are alive in it.
-void destroyPool(POOL pool){
-  if (!pool)
-    return;
   
   destroyQueue(pool->queue);
   free(pool->tids);
@@ -215,4 +222,20 @@ void destroyPool(POOL pool){
   pthread_mutex_destroy(&pool->lock);
 
   free(pool);
+}
+
+// Checks if a given thread is the only one awaken in the pool.
+char isLastThreadInPool(POOL pool){
+  if (!pool)
+    return 0;
+  
+  pthread_mutex_t* lockPtr = &pool->lock;
+  char ret = 0;
+
+  pthread_mutex_lock(lockPtr);
+  if (pool->nAvailableThreads == pool->nThreads-1)
+    ret = 1;
+  pthread_mutex_unlock(lockPtr);
+
+  return ret;
 }

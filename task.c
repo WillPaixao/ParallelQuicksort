@@ -19,14 +19,48 @@ TASK makeTask(int* vector, int startSeg, int endSeg){
   // newTask->j = startSeg;
 
   // Initialization of locks & condition variables
-  // ...
+  if (pthread_mutex_init(&newTask->controlLock, NULL)
+      /* ... */){
+    free(newTask);
+    return NULL;
+  }
+
   return newTask;
 }
 
 // Destroys the task.
 void destroyTask(TASK task){
   // Destroy locks & condition variables
+  pthread_mutex_destroy(&task->controlLock);
   // ...
   
   free(task);
+}
+
+// Checks if a given thread executing a task is the last one alive in it.
+char isLastThreadInTask(TASK task){
+  if (!task)
+    return 0;
+  
+  pthread_mutex_t* lockPtr = &task->controlLock;
+  char ret = 0;
+  
+  pthread_mutex_lock(lockPtr);
+  if (task->nFinishedWorkers == task->nWorkers-1)
+    ret = 1;
+  pthread_mutex_unlock(lockPtr);
+
+  return ret;
+}
+
+// Signal that a thread finished its execution in a task.
+void finishTask(TASK task){
+  if (!task)
+    return;
+  
+  pthread_mutex_t* lockPtr = &task->controlLock;
+
+  pthread_mutex_lock(lockPtr);
+  task->nFinishedWorkers++;
+  pthread_mutex_unlock(lockPtr);
 }
