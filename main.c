@@ -24,13 +24,9 @@ void incThread(TASK task, int taskTID, POOL pool){
   for (int i = start+taskTID; i <= end; i += nWorkers)
     vec[i]++;
   
+  printf("Incremented vector!\n");
   if (isLastThreadInTask(task)){
-    printf("Incremented vector!\n");
-
     if (start < end){ // Recursive case
-      makeTask(vec, start, end/2);
-      makeTask(vec, (end/2)+1, end);
-
       executeTask(makeTask(vec, start, end/2), pool);
       executeTask(makeTask(vec, (end/2)+1, end), pool);
     }

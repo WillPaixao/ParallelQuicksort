@@ -25,12 +25,15 @@ QUEUE makeQueue(){
   queue_t* newQueue = (queue_t*)malloc(sizeof(queue_t));
   if (!newQueue)
     return NULL;
+  
   if (pthread_mutex_init(&newQueue->lock, NULL)){
     free(newQueue);
     return NULL;
   }
+
   newQueue->first = NULL;
   newQueue->last = NULL;
+  
   return newQueue;
 }
 
@@ -44,9 +47,11 @@ char isEmptyQueue(QUEUE queue){
 TASK putTask(TASK task, QUEUE queue){
   if (!task || !queue)
     return NULL;
+  
   element_t* newElement = (element_t*)malloc(sizeof(element_t));
   if (!newElement)
     return NULL;
+  
   newElement->content = task;
   newElement->next = NULL;
 
@@ -67,6 +72,7 @@ TASK putTask(TASK task, QUEUE queue){
 TASK takeTask(QUEUE queue){
   if (!queue || isEmptyQueue(queue))
     return NULL;
+  
   element_t* elementTaken;
   task_t* taskTaken;
 
@@ -80,6 +86,7 @@ TASK takeTask(QUEUE queue){
 
   taskTaken = elementTaken->content;
   free(elementTaken);
+  
   return taskTaken;
 }
 

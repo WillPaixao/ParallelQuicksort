@@ -115,7 +115,8 @@ void* threadFunc(void* args){
     while (!pool->shutdown && isEmptyQueue(pool->queue))
       pthread_cond_wait(sleepingPtr, lockPtr); // ... sleep until something happens
     
-    if (isEmptyQueue(pool->queue)){ // If something happened and the queue is empty...
+    // If something happened and the queue is empty...
+    if (isEmptyQueue(pool->queue) && !isRecruiting){
       pthread_mutex_unlock(lockPtr);
       break; // ... then no more tasks will be assigned (pool shutdown)
     }
@@ -135,7 +136,7 @@ void* threadFunc(void* args){
     taskTIDLocal = taskTIDGlobal;
 
     // If there is no one left to recruit...
-    if (nAllocatedWorkers == taskTIDLocal){
+    if (nAllocatedWorkers == taskTIDGlobal){
       isRecruiting = 0;      // ... end the recruiting phase...
       taskTIDGlobal = 0;     // ... reset the global task TID...
       currTaskGlobal = NULL; // ... and reset the task at hand, for safety
