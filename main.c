@@ -2,52 +2,38 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include "taskQueue.h"
+#include "threadPool.h"
 
-QUEUE queue;
+// TODO:
+// - Corrigir implementação de funções de TASK para diferenciar threads
+// - Pensar em como verificar fim da recursão (shutdown)
+// - Implementar caso de teste com incThread (incrementar números em um vetor)
+// - Testar com quicksort de fato
 
-void* testThread(void* args){
-  long int i = (long int)args;
-  TASK task = makeTask(i, i+1);
-  putTask(task, queue);
-  for (int j = 0; j < 1000000; j++);
-  printQueue(i, queue);
-  task = takeTask(queue);
-  destroyTask(task);
-  pthread_exit(NULL);
+void incThread(TASK args){
+
 }
 
 int main(int argc, char* argv[]){
   int nThreads;
+  int maxWorkers;
+  const int VEC_LEN = 10;
+  int vec[VEC_LEN] = {1,2,3,4,5,6,7,8,9,10};
+  POOL pool;
+  TASK task;
   
-  if (argc < 2){
-    printf("ERROR: Arguments missing! Try %s <nº threads>\n", argv[0]);
+  if (argc < 3){
+    printf("ERROR: Arguments missing! Try %s <nº threads> <nº max workers per task>\n", argv[0]);
     exit(EXIT_FAILURE);
   }
 
   nThreads = atoi(argv[1]);
-  if (nThreads < 1){
-    printf("ERROR: Invalid number of threads!\n");
-    exit(EXIT_FAILURE);
-  }
-  
-  pthread_t tids[nThreads];
-  queue = makeQueue();
+  maxWorkers = atoi(argv[2]);
 
-  for (long int i = 0; i < nThreads; i++){
-    if (pthread_create(&tids[i], NULL, testThread, (void*)i)){
-      printf("ERROR: Cannot create thread %ld!\n", i);
-      exit(EXIT_FAILURE);
-    }
-  }
+  pool = makePool(nThreads, maxWorkers, incThread);
 
-  for (int i = 0; i < nThreads; i++){
-    if (pthread_join(tids[i], NULL)){
-      printf("ERROR: Cannot join thread %d!", i);
-      exit(EXIT_FAILURE);
-    }
-  }
-
-  destroyQueue(queue);
+  task = makeTask(vec, 0, VEC_LEN-1);
+  executeTask(task, pool);
 
   return 0;
 }
