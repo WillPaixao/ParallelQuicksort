@@ -192,5 +192,6 @@ int main(int argc, char *argv[]) {
 
     free(global_vec);
     free(threads);
+    free(queue);
     return 0;
 }
