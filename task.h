@@ -24,3 +24,4 @@ typedef task_t* TASK; // Pointer to a task
 TASK makeTask(int* vector, int startIdx, int endIdx);
 void destroyTask(TASK task);
 char isLastThreadInTask(TASK task);
+void finishTask(TASK task);

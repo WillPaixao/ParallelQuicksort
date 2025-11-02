@@ -52,3 +52,15 @@ char isLastThreadInTask(TASK task){
 
   return ret;
 }
+
+// Signals that a thread finished its execution in a task.
+void finishTask(TASK task){
+  if (!task)
+    return;
+  
+  pthread_mutex_t* lockPtr = &task->controlLock;
+
+  pthread_mutex_lock(lockPtr);
+  task->nFinishedWorkers++;   // Signals task that this thread finished its work
+  pthread_mutex_unlock(lockPtr);
+}

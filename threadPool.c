@@ -177,25 +177,6 @@ void executeTask(TASK task, POOL pool){
   //pthread_mutex_unlock(&pool->lock);
 }
 
-// Signals that a thread finished its execution in a task.
-void finishTask(TASK task){
-  if (!task)
-    return;
-  
-  pthread_mutex_t* taskLockPtr = &task->controlLock;
-  //pthread_mutex_t* poolLockPtr = &pool->lock;
-
-  pthread_mutex_lock(taskLockPtr);
-  task->nFinishedWorkers++;   // Signals task that this thread finished its work
-  pthread_mutex_unlock(taskLockPtr);
-
-  /*
-  pthread_mutex_lock(poolLockPtr);
-  pool->nAvailableThreads++;  // Signals pool that this thread is available
-  pthread_mutex_unlock(poolLockPtr);
-  */
-}
-
 // Recruits other threads in the pool to help in a task, signaling them.
 // Assumes external mutual exclusion on access to the pool and task.
 // Returns the number of allocated workers in success, 0 otherwise.
