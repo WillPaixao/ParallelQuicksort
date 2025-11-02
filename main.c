@@ -1,9 +1,10 @@
 // Defining this will allow debug log messages to appear in execution
-#define DEBUG // Comment this line if you do not want log messages
+//#define DEBUG // Comment this line if you do not want log messages
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include "timer.h"
 #include "task.h"
 #include "taskQueue.h"
 #include "threadPool.h"
@@ -45,41 +46,66 @@ void incThread(TASK task, int taskTID, POOL pool){
 int main(int argc, char* argv[]){
   int nThreads;
   int maxWorkers;
-  const int VEC_LEN = 10;
-  int vec[] = {1,2,3,4,5,6,7,8,9,10};
+  int vecLen;
+  int* vec;
+  char showVectors = 0;
+
+  double startTime;
+  double endTime;
+
   POOL pool;
   TASK task;
   
-  if (argc < 3){
-    printf("ERROR: Arguments missing! Try %s <nº threads> <nº max workers per task>\n", argv[0]);
+  if (argc < 4){
+    printf("ERROR: Arguments missing! Try %s <nº threads> <nº max workers per task> <vector length> <show vectors? (OPTIONAL)>\n", argv[0]);
     exit(EXIT_FAILURE);
   }
 
   nThreads = atoi(argv[1]);
   maxWorkers = atoi(argv[2]);
+  vecLen = atoi(argv[3]);
+  if (argc >= 5)
+    showVectors = atoi(argv[4]);
 
   if (nThreads <= 0 ||
       maxWorkers <= 0 ||
-      maxWorkers > nThreads){
+      maxWorkers > nThreads ||
+      vecLen <= 0){
     printf("ERROR: Invalid arguments!\n");
     exit(EXIT_FAILURE);
   }
 
-  printf("Initial vector: ");
-  for (int i = 0; i < VEC_LEN; i++)
-    printf("%d ", vec[i]);
-  printf("\n");
+  vec = (int*)calloc(vecLen, sizeof(int));
+  for (int i = 0; i < vecLen; i++)
+    vec[i] = i;
+
+  if (showVectors){
+    printf("Initial vector: ");
+    for (int i = 0; i < vecLen; i++)
+      printf("%d ", vec[i]);
+    printf("\n");
+  }
+
+  GET_TIME(startTime);
 
   pool = makePool(nThreads, maxWorkers, incThread);
 
-  task = makeTask(vec, 0, VEC_LEN-1);
+  task = makeTask(vec, 0, vecLen-1);
   executeTask(task, pool);
   waitPoolShutdown(pool);
 
-  printf("Final vector: ");
-  for (int i = 0; i < VEC_LEN; i++)
-    printf("%d ", vec[i]);
-  printf("\n");
+  GET_TIME(endTime);
 
+  if (showVectors){
+    printf("Final vector: ");
+    for (int i = 0; i < vecLen; i++)
+      printf("%d ", vec[i]);
+    printf("\n");
+  }
+
+  printf("Time elapsed: %lf s\n", endTime - startTime);
+
+  free(vec);
+  
   return 0;
 }
