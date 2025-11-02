@@ -37,10 +37,28 @@ void create_thread(int start,int i, int end, int nthreads){
     nthreads1+=1*(nthreads1==0);
     nthreads2+=1*(nthreads2==0);
     vec_t* queue1;
+    if(i==end){
+        queue1=create_queue(start,i,nthreads);
+
+        pthread_t *threads1 = (pthread_t *)malloc(nthreads * sizeof(pthread_t));
+        for (int i = 0; i < nthreads; i++) {
+            pthread_create(&threads1[i], NULL, quicksort, (void*)queue1);
+        }
+        printf("Creation finished!\n");
+
+        for (int i = 0; i < nthreads; i++) {
+            pthread_join(threads1[i], NULL);
+        }
+        printf("Join finished!\n");
+
+        free(threads1);
+        free(queue1);
+    }
+
     vec_t* queue2;
 
     queue1=create_queue(start,i,nthreads1);
-    queue2=create_queue(i,end,nthreads2);
+    queue2=create_queue(i+1,end,nthreads2);
 
     pthread_t *threads1 = (pthread_t *)malloc(nthreads1 * sizeof(pthread_t));
     for (int i = 0; i < nthreads1; i++) {
@@ -74,7 +92,7 @@ void* quicksort(void* args){
     int local_arrow, local_i;
     vec_t* vec= (vec_t*) args;
     int temp;
-    printf("Thread created\n");
+    printf("Thread created: %i %i\n",vec->start,vec->end);
 
     sem_wait(&global_mutex);
 
@@ -83,7 +101,7 @@ void* quicksort(void* args){
     while(1){
         sem_wait(&vec->mutex);
         if(vec->arrow==vec->end){
-            //printf("Current i: %i, %i<%i<%i\n",vec->i,global_vec[vec->i],global_vec[vec->end],global_vec[vec->i+1]);
+            printf("Current i: %i, %i<%i<%i\n",vec->i,global_vec[vec->i],global_vec[vec->end],global_vec[vec->i+1]);
             vec->finished++;
             if(vec->finished==vec->thread_n){
                 temp=global_vec[vec->i];
