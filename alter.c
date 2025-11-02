@@ -38,7 +38,7 @@ void create_thread(int start,int i, int end, int nthreads){
     nthreads2+=1*(nthreads2==0);
     vec_t* queue1;
     if(i==end){
-        queue1=create_queue(start,i,nthreads);
+        queue1=create_queue(start,i-1,nthreads);
 
         pthread_t *threads1 = (pthread_t *)malloc(nthreads * sizeof(pthread_t));
         for (int i = 0; i < nthreads; i++) {
@@ -108,9 +108,9 @@ void* quicksort(void* args){
                 global_vec[vec->i]=global_vec[vec->end];
                 global_vec[vec->end]=temp;
                 if(vec->end-vec->start>1){
-                    create_thread(vec->start,vec->i,vec->end,vec->thread_n);
-                    sem_post(&vec->mutex);
                     sem_post(&global_mutex);
+                    sem_post(&vec->mutex);
+                    create_thread(vec->start,vec->i,vec->end,vec->thread_n);
                     pthread_exit(NULL);
                 }
             }
