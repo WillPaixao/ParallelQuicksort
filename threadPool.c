@@ -1,5 +1,7 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include "task.h"
 #include "taskQueue.h"
 #include "threadPool.h"
@@ -24,7 +26,7 @@ typedef struct pool_s {
   char shutdown;                      // Indicator of pool shutdown
 
   // Locks & condition variables
-  pthread_cond_t sleeping;            // Condition variable that implements on-demand task picking
+  sem_t sleeping;                     // Semaphore that implements on-demand task picking
   pthread_mutex_t lock;               // Mutex lock to inhibit data racing
 } pool_t;
 
@@ -50,7 +52,7 @@ POOL makePool(int nThreads, int maxWorkers, void (*taskFunc)(TASK, int, POOL)){
   newPool->shutdown = 0;
   newPool->queue = makeQueue();
   if (!newPool->queue || 
-      pthread_cond_init(&newPool->sleeping, NULL) ||
+      sem_init(&newPool->sleeping, 0, 0) ||
       pthread_mutex_init(&newPool->lock, NULL)){
     free(newPool);
     return NULL;
@@ -58,7 +60,7 @@ POOL makePool(int nThreads, int maxWorkers, void (*taskFunc)(TASK, int, POOL)){
 
   // Populates pool with new threads
   if (!populatePool(newPool)){
-    pthread_cond_destroy(&newPool->sleeping);
+    sem_destroy(&newPool->sleeping);
     pthread_mutex_destroy(&newPool->lock);
     return NULL;
   }
@@ -99,33 +101,39 @@ void* threadFunc(void* args){
 
   // Control variables for the recruiting phase
   static char isRecruiting = 0;
-  static int nAllocatedWorkers;
+  static int nAllocatedWorkers = 0;
   static int taskTIDGlobal;
   int taskTIDLocal;
 
   // Local references to synchronization variables
   pthread_mutex_t* lockPtr = &pool->lock;
-  pthread_cond_t* sleepingPtr = &pool->sleeping;
+  sem_t* sleepingPtr = &pool->sleeping;
   
   while (1){
     // Long critical section (acquiring and recruiting phases)
     pthread_mutex_lock(lockPtr);
 
-    // While pool is still being fed and is empty...
-    while (!pool->shutdown && isEmptyQueue(pool->queue))
-      pthread_cond_wait(sleepingPtr, lockPtr); // ... sleep until something happens
+    // While pool is still being fed and is empty and a recruitment is not taking place...
+    if (!pool->shutdown && isEmptyQueue(pool->queue) && !isRecruiting){
+      pthread_mutex_unlock(lockPtr);
+      sem_wait(sleepingPtr); // ... sleep until something happens
+      pthread_mutex_lock(lockPtr);
+    }
     
-    // If something happened and the queue is empty...
+    // If something happened and the queue is empty and is not being recruited...
     if (isEmptyQueue(pool->queue) && !isRecruiting){
       pthread_mutex_unlock(lockPtr);
       break; // ... then no more tasks will be assigned (pool shutdown)
     }
 
+    pool->nAvailableThreads--;
+
     if (!isRecruiting){ // If not in recruiting phase, acquire a pending task and recruit
       isRecruiting = 1;
       currTaskGlobal = takeTask(pool->queue);
-      nAllocatedWorkers = recruitThreads(pool, currTaskGlobal);
       taskTIDGlobal = 0;
+      nAllocatedWorkers = recruitThreads(pool, currTaskGlobal);
+      logMessage("Recruiting %d threads!\n", nAllocatedWorkers);
     }
     else { // Else, account for my recruitment
       taskTIDGlobal++;
@@ -137,6 +145,7 @@ void* threadFunc(void* args){
 
     // If there is no one left to recruit...
     if (nAllocatedWorkers == taskTIDGlobal){
+      logMessage("Ended recruitment of %d threads!\n", taskTIDGlobal);
       isRecruiting = 0;      // ... end the recruiting phase...
       taskTIDGlobal = 0;     // ... reset the global task TID...
       currTaskGlobal = NULL; // ... and reset the task at hand, for safety
@@ -147,7 +156,7 @@ void* threadFunc(void* args){
     pool->taskFunc(currTaskLocal, taskTIDLocal, pool); // Finally, execute the task (concurrently)
 
     pthread_mutex_lock(lockPtr);
-    pool->nAvailableThreads++; // After doing the task, becomes available
+    pool->nAvailableThreads++;  // Signals pool that this thread is available
     pthread_mutex_unlock(lockPtr);
   }
 
@@ -160,11 +169,31 @@ void executeTask(TASK task, POOL pool){
     return;
 
   putTask(task, pool->queue);
+  logMessage("Task (s=%d, d=%d) was put onto the queue!\n", task->startSeg, task->endSeg);
 
-  pthread_mutex_lock(&pool->lock);
-  pool->nAvailableThreads--;
-  pthread_cond_signal(&pool->sleeping);
-  pthread_mutex_unlock(&pool->lock);
+  //pthread_mutex_lock(&pool->lock);
+  // pool->nAvailableThreads--;
+  sem_post(&pool->sleeping);
+  //pthread_mutex_unlock(&pool->lock);
+}
+
+// Signals that a thread finished its execution in a task.
+void finishTask(TASK task){
+  if (!task)
+    return;
+  
+  pthread_mutex_t* taskLockPtr = &task->controlLock;
+  //pthread_mutex_t* poolLockPtr = &pool->lock;
+
+  pthread_mutex_lock(taskLockPtr);
+  task->nFinishedWorkers++;   // Signals task that this thread finished its work
+  pthread_mutex_unlock(taskLockPtr);
+
+  /*
+  pthread_mutex_lock(poolLockPtr);
+  pool->nAvailableThreads++;  // Signals pool that this thread is available
+  pthread_mutex_unlock(poolLockPtr);
+  */
 }
 
 // Recruits other threads in the pool to help in a task, signaling them.
@@ -174,14 +203,16 @@ int recruitThreads(POOL pool, TASK task){
   if (!pool || !task)
     return 0;
   
-  pthread_cond_t* sleepingPtr = &pool->sleeping;
+  sem_t* sleepingPtr = &pool->sleeping;
   int nAvailableThreads = pool->nAvailableThreads;
   int maxWorkers = pool->maxWorkers - 1; // Maximum number of extra workers allocatable
   int nAllocatedWorkers = min(nAvailableThreads, maxWorkers);
 
-  pool->nAvailableThreads -= nAllocatedWorkers;
-  for (int i = 0; i < nAllocatedWorkers; i++)
-    pthread_cond_signal(sleepingPtr);
+  // pool->nAvailableThreads -= nAllocatedWorkers;
+  for (int i = 0; i < nAllocatedWorkers; i++){
+    logMessage("Thread %d recruited for task!\n", i+1);
+    sem_post(sleepingPtr);
+  }
   
   task->nWorkers = nAllocatedWorkers + 1; // Plus one accounting for the recruiter
   task->nFinishedWorkers = 0;
@@ -195,12 +226,15 @@ void shutdownPool(POOL pool){
     return;
 
   pthread_mutex_t* lockPtr = &pool->lock;
-  pthread_cond_t* sleepingPtr = &pool->sleeping;
+  sem_t* sleepingPtr = &pool->sleeping;
+  int nThreads = pool->nThreads; 
 
   pthread_mutex_lock(lockPtr);
   pool->shutdown = 1;
-  pthread_cond_broadcast(sleepingPtr); // Signaling all threads to prepare for leaving
   pthread_mutex_unlock(lockPtr);
+
+  for (int i = 0; i < nThreads; i++)
+    sem_post(sleepingPtr); // Signaling all threads to prepare for leaving
 }
 
 // Waits the joining of threads and destroys the pool.
@@ -215,11 +249,12 @@ void waitPoolShutdown(POOL pool){
     if (pthread_join(tids[i], NULL)){
       // TODO: think of a good error handling here
     }
+    logMessage("Received join of thread %d!\n", i);
   }
   
   destroyQueue(pool->queue);
   free(pool->tids);
-  pthread_cond_destroy(&pool->sleeping);
+  sem_destroy(&pool->sleeping);
   pthread_mutex_destroy(&pool->lock);
 
   free(pool);
@@ -234,7 +269,7 @@ char isLastThreadInPool(POOL pool){
   char ret = 0;
 
   pthread_mutex_lock(lockPtr);
-  if (pool->nAvailableThreads == pool->nThreads-1)
+  if (pool->nAvailableThreads == (pool->nThreads-1))
     ret = 1;
   pthread_mutex_unlock(lockPtr);
 
