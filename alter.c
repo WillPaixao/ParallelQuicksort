@@ -6,6 +6,7 @@
 #include <time.h>
 
 int* global_vec;
+sem_t global_mutex;
 
 typedef struct {
     int start, end, arrow;
@@ -27,21 +28,94 @@ vec_t* create_queue(int start, int end, int thread_n){
     return vec; 
 }
 
+void* quicksort(void* args);
+
+void create_thread(int start,int i, int end, int nthreads){
+    int nthreads1,nthreads2;
+    nthreads1=nthreads/2;
+    nthreads2=nthreads1+(nthreads%2);
+    nthreads1+=1*(nthreads1==0);
+    nthreads2+=1*(nthreads2==0);
+    vec_t* queue1;
+    if(i==end){
+        queue1=create_queue(start,i-1,nthreads);
+
+        pthread_t *threads1 = (pthread_t *)malloc(nthreads * sizeof(pthread_t));
+        for (int i = 0; i < nthreads; i++) {
+            pthread_create(&threads1[i], NULL, quicksort, (void*)queue1);
+        }
+        printf("Creation finished!\n");
+
+        for (int i = 0; i < nthreads; i++) {
+            pthread_join(threads1[i], NULL);
+        }
+        printf("Join finished!\n");
+
+        free(threads1);
+        free(queue1);
+    }
+
+    vec_t* queue2;
+
+    queue1=create_queue(start,i,nthreads1);
+    queue2=create_queue(i+1,end,nthreads2);
+
+    pthread_t *threads1 = (pthread_t *)malloc(nthreads1 * sizeof(pthread_t));
+    for (int i = 0; i < nthreads1; i++) {
+        pthread_create(&threads1[i], NULL, quicksort, (void*)queue1);
+    }
+
+    pthread_t *threads2 = (pthread_t *)malloc(nthreads2 * sizeof(pthread_t));
+    for (int i = 0; i < nthreads2; i++) {
+        pthread_create(&threads2[i], NULL, quicksort, (void*)queue2);
+    }
+    printf("Creation finished!\n");
+
+    for (int i = 0; i < nthreads1; i++) {
+        pthread_join(threads1[i], NULL);
+    }
+
+    for (int i = 0; i < nthreads2; i++) {
+        pthread_join(threads2[i], NULL);
+    }
+    printf("Join finished!\n");
+
+    free(threads1);
+    free(threads2);
+    free(queue1);
+    free(queue2);
+
+    return;
+}
+
 void* quicksort(void* args){
     int local_arrow, local_i;
     vec_t* vec= (vec_t*) args;
     int temp;
+    printf("Thread created: %i %i\n",vec->start,vec->end);
+
+    sem_wait(&global_mutex);
+
+    printf("Thread started\n");
+
     while(1){
         sem_wait(&vec->mutex);
         if(vec->arrow==vec->end){
-            //printf("Current i: %i, %i<%i<%i\n",vec->i,global_vec[vec->i],global_vec[vec->end],global_vec[vec->i+1]);
+            printf("Current i: %i, %i<%i<%i\n",vec->i,global_vec[vec->i],global_vec[vec->end],global_vec[vec->i+1]);
             vec->finished++;
             if(vec->finished==vec->thread_n){
                 temp=global_vec[vec->i];
                 global_vec[vec->i]=global_vec[vec->end];
                 global_vec[vec->end]=temp;
+                if(vec->end-vec->start>1){
+                    sem_post(&global_mutex);
+                    sem_post(&vec->mutex);
+                    create_thread(vec->start,vec->i,vec->end,vec->thread_n);
+                    pthread_exit(NULL);
+                }
             }
             sem_post(&vec->mutex);
+            sem_post(&global_mutex);
             pthread_exit(NULL);
         }
         local_arrow=vec->arrow;
@@ -71,7 +145,7 @@ void* quicksort(void* args){
 }
 
 int main(int argc, char *argv[]) {
-    int nthreads,n,randomNumber,start,end,lenght;
+    int nthreads,n,randomNumber;
     vec_t* queue;
 
     srand(time(NULL));
@@ -82,7 +156,8 @@ int main(int argc, char *argv[]) {
     }
     nthreads = atoi(argv[1]);
     n = atoi(argv[2]);
-    lenght=n/nthreads;
+    
+    sem_init(&global_mutex,0,nthreads);
 
     global_vec=(int*) malloc(sizeof(int)*n);
     for (int i = 0; i < n; i++) {
@@ -113,5 +188,6 @@ int main(int argc, char *argv[]) {
     printf("\n");
 
     free(global_vec);
+    free(threads);
     return 0;
 }
