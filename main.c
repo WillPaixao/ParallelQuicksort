@@ -76,8 +76,6 @@ int main(int argc, char* argv[]){
   }
 
   vec = (int*)calloc(vecLen, sizeof(int));
-  for (int i = 0; i < vecLen; i++)
-    vec[i] = i;
 
   if (showVectors){
     printf("Initial vector: ");
@@ -106,6 +104,6 @@ int main(int argc, char* argv[]){
   printf("Time elapsed: %lf s\n", endTime - startTime);
 
   free(vec);
-  
+
   return 0;
 }
