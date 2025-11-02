@@ -46,14 +46,14 @@ char isLastThreadInTask(TASK task){
   char ret = 0;
   
   pthread_mutex_lock(lockPtr);
-  if (task->nFinishedWorkers == task->nWorkers-1)
+  if (task->nFinishedWorkers == (task->nWorkers-1))
     ret = 1;
   pthread_mutex_unlock(lockPtr);
 
   return ret;
 }
 
-// Signal that a thread finished its execution in a task.
+// Signals that a thread finished its execution in a task.
 void finishTask(TASK task){
   if (!task)
     return;
@@ -61,6 +61,6 @@ void finishTask(TASK task){
   pthread_mutex_t* lockPtr = &task->controlLock;
 
   pthread_mutex_lock(lockPtr);
-  task->nFinishedWorkers++;
+  task->nFinishedWorkers++;   // Signals task that this thread finished its work
   pthread_mutex_unlock(lockPtr);
 }

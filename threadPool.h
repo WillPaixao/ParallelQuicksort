@@ -1,6 +1,12 @@
 #pragma once
 #include "task.h"
 
+#ifdef DEBUG
+  #define logMessage(...) printf(__VA_ARGS__)
+#else
+  #define logMessage(...)
+#endif
+
 struct pool_s;
 typedef struct pool_s* POOL; // Opaque pointer to thread pool
 
