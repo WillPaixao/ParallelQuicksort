@@ -16,61 +16,63 @@ enum ORDER {
   RANDOM
 };
 
-// TODO: Testar com quicksort de fato
-
-void quicksortPartition(TASK task, int taskTID, POOL pool){
+void quicksort(TASK task, int taskTID, POOL pool){
   int* vec = task->vector;
   int start = task->start;
   int end = task->end;
-  int pivot = vec[end]; // O pivô já foi movido para o final em makeTask
+  int pivot = vec[end]; // Random pivot is already at the end
+  int jLocal;
+  int iLocal;
 
-  // Ponteiros para os dados compartilhados da tarefa
   int* iPtr = &task->i;
   int* jPtr = &task->j;
   pthread_mutex_t* lockPtr = &task->domainLock;
 
   while (1){
-    // Pega um índice 'j' para analisar. Esta é a unidade de trabalho.
-    int jLocal;
     pthread_mutex_lock(lockPtr);
-    jLocal = (*jPtr)++;
+    jLocal = (*jPtr)++; // Copying current j locally and incrementing for the next worker
     pthread_mutex_unlock(lockPtr);
 
-    // Se o iterador 'j' já passou do fim da área de partição...
+    // Current j is already out of bounds
     if (jLocal >= end){
-      // A última thread a terminar é responsável por finalizar a partição.
+      // Last thread in task is responsible for ending it
       if (isLastThreadInTask(task)){
-        // Coloca o pivô em sua posição final (i)
-        swapInts(&vec[*iPtr], &vec[end]);
+        // Swaps pivot into its designated destination
         int pivotIdx = *iPtr;
+        swapInts(&vec[pivotIdx], &vec[end]);
 
-        // Cria as tarefas para as sub-partições recursivas
-        if (pivotIdx - 1 > start) {
-            executeTask(makeTask(vec, start, pivotIdx - 1), pool);
+        //char isBaseCase = 1; // Flag indicating if this thread falls into a base case
+
+        // Makes the recursive calls according to pivot index
+        // In making a recursive call, this worker is certainly not in a base case
+        if (pivotIdx-1 > start){
+          executeTask(makeTask(vec, start, pivotIdx-1), pool);
+          //isBaseCase = 0;
         }
-        if (pivotIdx + 1 < end) {
-            executeTask(makeTask(vec, pivotIdx + 1, end), pool);
+        if (pivotIdx+1 < end){
+          executeTask(makeTask(vec, pivotIdx+1, end), pool);
+          //isBaseCase = 0;
         }
 
-        // Se não há mais trabalho a ser feito, inicia o desligamento.
-        if (isLastThreadInPool(pool)) {
-          shutdownPool(pool);
-        }
+        // If in base case and is the last thread active in the entire pool...
+        if (/*isBaseCase &&*/ isLastThreadInPool(pool))
+          shutdownPool(pool); // ... the work has been done
+
         destroyTask(task);
       }
-      // Se não for a última thread, apenas encerra sua execução para esta tarefa.
-      finishTask(task);
-      break;
+      else
+        finishTask(task); // If this is not the last thread in task, just signal that finished it 
+      
+      return; // In both cases, return from this function
     }
 
-    // Lógica de partição: se vec[j] < pivot, move para a seção 'i'.
-    if (vec[jLocal] < pivot){
-      int iLocal;
+    // If j is not out of bounds...
+    if (vec[jLocal] < pivot){ // ... we need to check if a swap is needed
       pthread_mutex_lock(lockPtr);
       iLocal = (*iPtr)++;
       pthread_mutex_unlock(lockPtr);
       
-      // A troca não precisa estar na seção crítica se os índices são locais.
+      // Indexes are local
       swapInts(&vec[iLocal], &vec[jLocal]);
     }
   }
@@ -103,7 +105,7 @@ int main(int argc, char* argv[]){
   maxWorkers = atoi(argv[2]);
   vecLen = atoi(argv[3]);
   orderOption = atoi(argv[4]);
-  if (argc >= 5)
+  if (argc >= 6)
     showVectors = atoi(argv[5]);
 
   if (nThreads <= 0 ||
@@ -149,7 +151,7 @@ int main(int argc, char* argv[]){
 
   GET_TIME(startTime);
 
-  pool = makePool(nThreads, maxWorkers, quicksortPartition);
+  pool = makePool(nThreads, maxWorkers, quicksort);
 
   task = makeTask(vec, 0, vecLen-1);
   executeTask(task, pool);
