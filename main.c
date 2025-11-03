@@ -4,42 +4,75 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
-#include "timer.h"
 #include "task.h"
 #include "taskQueue.h"
 #include "threadPool.h"
+#include "utils.h"
+#include "timer.h"
+
+enum ORDER {
+  INCREASING,
+  DECREASING,
+  RANDOM
+};
 
 // TODO: Testar com quicksort de fato
 
-void incThread(TASK task, int taskTID, POOL pool){
+void quicksortPartition(TASK task, int taskTID, POOL pool){
   int* vec = task->vector;
   int start = task->start;
   int end = task->end;
-  int nWorkers = task->nWorkers;
-  int mid = start + (end - start)/2;
+  int pivot = vec[end]; // O pivô já foi movido para o final em makeTask
 
-  logMessage("Task (s=%d, d=%d): Nº workers: %d\n", start, end, nWorkers);
-  logMessage("Task (s=%d, d=%d): Task TID: %d\n", start, end, taskTID);
-  for (int i = start+taskTID; i <= end; i += nWorkers)
-    vec[i]++;
-  
-  logMessage("Task (s=%d, d=%d): Incremented vector!\n", start, end);
+  // Ponteiros para os dados compartilhados da tarefa
+  int* iPtr = &task->i;
+  int* jPtr = &task->j;
+  pthread_mutex_t* lockPtr = &task->domainLock;
 
-  if (isLastThreadInTask(task)){
-    if (start < end){ // Recursive case
-      executeTask(makeTask(vec, start, mid), pool);
-      executeTask(makeTask(vec, mid+1, end), pool);
+  while (1){
+    // Pega um índice 'j' para analisar. Esta é a unidade de trabalho.
+    int jLocal;
+    pthread_mutex_lock(lockPtr);
+    jLocal = (*jPtr)++;
+    pthread_mutex_unlock(lockPtr);
+
+    // Se o iterador 'j' já passou do fim da área de partição...
+    if (jLocal >= end){
+      // A última thread a terminar é responsável por finalizar a partição.
+      if (isLastThreadInTask(task)){
+        // Coloca o pivô em sua posição final (i)
+        swapInts(&vec[*iPtr], &vec[end]);
+        int pivotIdx = *iPtr;
+
+        // Cria as tarefas para as sub-partições recursivas
+        if (pivotIdx - 1 > start) {
+            executeTask(makeTask(vec, start, pivotIdx - 1), pool);
+        }
+        if (pivotIdx + 1 < end) {
+            executeTask(makeTask(vec, pivotIdx + 1, end), pool);
+        }
+
+        // Se não há mais trabalho a ser feito, inicia o desligamento.
+        if (isLastThreadInPool(pool)) {
+          shutdownPool(pool);
+        }
+        destroyTask(task);
+      }
+      // Se não for a última thread, apenas encerra sua execução para esta tarefa.
+      finishTask(task);
+      break;
     }
-    else if (isLastThreadInPool(pool)){ // Base case & is last thread awaken
-      shutdownPool(pool);
-    }
 
-    logMessage("Task (s=%d, d=%d) is being destroyed!\n", start, end);
-    destroyTask(task);
-  }
-  else {
-    finishTask(task); // Signal that this thread is finished in this task
-    logMessage("Task (s=%d, d=%d): Task TID %d finished task!\n", start, end, taskTID);
+    // Lógica de partição: se vec[j] < pivot, move para a seção 'i'.
+    if (vec[jLocal] < pivot){
+      int iLocal;
+      pthread_mutex_lock(lockPtr);
+      iLocal = (*iPtr)++;
+      pthread_mutex_unlock(lockPtr);
+      
+      // A troca não precisa estar na seção crítica se os índices são locais.
+      swapInts(&vec[iLocal], &vec[jLocal]);
+    }
   }
 }
 
@@ -47,7 +80,9 @@ int main(int argc, char* argv[]){
   int nThreads;
   int maxWorkers;
   int vecLen;
+  int* orderedVec;
   int* vec;
+  int orderOption;
   char showVectors = 0;
 
   double startTime;
@@ -55,17 +90,21 @@ int main(int argc, char* argv[]){
 
   POOL pool;
   TASK task;
+
+  setRandomSeed();
   
-  if (argc < 4){
-    printf("ERROR: Arguments missing! Try %s <nº threads> <nº max workers per task> <vector length> <show vectors? (OPTIONAL)>\n", argv[0]);
+  if (argc < 5){
+    printf("ERROR: Arguments missing! Try %s <nº threads> <nº max workers per task> <vector length> <order option> <print? (OPTIONAL)>\n", argv[0]);
+    printf("Order options: (0) increasing, (1) decreasing, (2) random\n");
     exit(EXIT_FAILURE);
   }
 
   nThreads = atoi(argv[1]);
   maxWorkers = atoi(argv[2]);
   vecLen = atoi(argv[3]);
+  orderOption = atoi(argv[4]);
   if (argc >= 5)
-    showVectors = atoi(argv[4]);
+    showVectors = atoi(argv[5]);
 
   if (nThreads <= 0 ||
       maxWorkers <= 0 ||
@@ -75,18 +114,42 @@ int main(int argc, char* argv[]){
     exit(EXIT_FAILURE);
   }
 
-  vec = (int*)calloc(vecLen, sizeof(int));
+  orderedVec = makeOrderedVector(vecLen);
+  if (!orderedVec){
+    printf("Couldn't allocate ordered vector!\n");
+    return 1;
+  }
+
+  vec = makeCopyVector(orderedVec, vecLen);
+  if (!vec){
+    printf("Couldn't allocate global vector!\n");
+    return 1;
+  }
+
+  switch (orderOption){
+    case INCREASING:
+      break;
+    case DECREASING:
+      reverse(vec, vecLen);
+      break;
+    case RANDOM:
+      shuffle(vec, vecLen);
+      break;
+    default:
+      printf("Invalid order option %d!\n", orderOption);
+      printf("Order options: (0) increasing, (1) decreasing, (2) random\n");
+      return 1;
+  }
 
   if (showVectors){
-    printf("Initial vector: ");
-    for (int i = 0; i < vecLen; i++)
-      printf("%d ", vec[i]);
+    printf("Original: ");
+    printVector(vec, vecLen);
     printf("\n");
   }
 
   GET_TIME(startTime);
 
-  pool = makePool(nThreads, maxWorkers, incThread);
+  pool = makePool(nThreads, maxWorkers, quicksortPartition);
 
   task = makeTask(vec, 0, vecLen-1);
   executeTask(task, pool);
@@ -95,13 +158,17 @@ int main(int argc, char* argv[]){
   GET_TIME(endTime);
 
   if (showVectors){
-    printf("Final vector: ");
-    for (int i = 0; i < vecLen; i++)
-      printf("%d ", vec[i]);
+    printf("Ordered: ");
+    printVector(vec, vecLen);
     printf("\n");
   }
 
-  printf("Time elapsed: %lf s\n", endTime - startTime);
+  if (areEqualVectors(orderedVec, vec, vecLen))
+    printf("The original vector was sorted successfully! :)\n");
+  else
+    printf("The sorting of original vector has failed! :(\n");
+
+  printf("Time to sort: %lf s\n", endTime - startTime);
 
   free(vec);
 

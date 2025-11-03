@@ -1,19 +1,7 @@
 #include <stdlib.h>
 #include <pthread.h>
+#include "utils.h"
 #include "task.h"
-
-// Returns a random integer on the interval [min, max].
-int randInt(int min, int max){
-  return (rand() % (max - min + 1)) + min;
-}
-
-// Swaps two integers in memory.
-void swapInts(int* a, int* b){
-  int temp;
-  temp = *a;
-  *a = *b;
-  *b = temp;
-}
 
 // Makes a new task.
 // Returns a pointer to the task in success, NULL if an error occurred.
@@ -28,7 +16,7 @@ TASK makeTask(int* vector, int start, int end){
   newTask->vector = vector;
   newTask->start = start;
   newTask->end = end;
-  newTask->i = start - 1;
+  newTask->i = start;
   newTask->j = start;
 
   // Already swapping the random pivot to the end of vector
