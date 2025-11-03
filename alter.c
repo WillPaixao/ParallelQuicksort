@@ -3,7 +3,14 @@
 #include <pthread.h>
 #include <math.h>
 #include <semaphore.h>
-#include <time.h>
+#include "utils.h"
+#include "timer.h"
+
+enum ORDER {
+    INCREASING,
+    DECREASING,
+    RANDOM
+};
 
 int* global_vec;
 sem_t global_mutex;
@@ -115,16 +122,16 @@ void* quicksort(void* args){
     int local_arrow, local_i;
     vec_t* vec= (vec_t*) args;
     int temp;
-    printf("Thread created: %i %i\n",vec->start,vec->end);
+    //printf("Thread created: %i %i\n",vec->start,vec->end);
 
     sem_wait(&global_mutex);
 
-    printf("Thread started\n");
+    //printf("Thread started\n");
 
     while(1){
         sem_wait(&vec->mutex);
         if(vec->arrow==vec->end){
-            printf("Current i: %i, %i<%i<%i\n",vec->i,global_vec[vec->i],global_vec[vec->end],global_vec[vec->i+1]);
+            //printf("Current i: %i, %i<%i<%i\n",vec->i,global_vec[vec->i],global_vec[vec->end],global_vec[vec->i+1]);
             vec->finished++;
             if(vec->finished==vec->thread_n){
                 temp=global_vec[vec->i];
@@ -164,110 +171,100 @@ void* quicksort(void* args){
             global_vec[local_arrow]=temp;
         }
         else{
-        printf("not changing order, %i>%i\n",global_vec[local_arrow],global_vec[vec->end]);
+        //printf("not changing order, %i>%i\n",global_vec[local_arrow],global_vec[vec->end]);
         }
     }
-}
-
-int randInt(int min, int max){
-    return (rand() % (max - min + 1)) + min;
-}
-
-void swapInts(int* a, int* b){
-    int temp;
-    temp = *a;
-    *a = *b;
-    *b = temp;
-}
-
-int partition(int* vec, int start, int end){
-    int i; // Index of last element to the left side of pivot
-    int pivotIdx = randInt(start, end);  // Randomizing the pivot selection
-    int pivot = vec[pivotIdx];
-
-    // Putting the random pivot at the end of vector
-    swapInts(&vec[pivotIdx], &vec[end]);
-
-    i = start-1;
-    for (int j = start; j < end; j++){  // Iterating through the vector
-        if (vec[j] < pivot){  // If element belongs to left side of pivot...
-            i++;              // ... make more space to it...
-            swapInts(&vec[i], &vec[j]); // ... and put it into that place
-        }
-    }
-
-    // The index after i has to be the pivot
-    swapInts(&vec[i+1], &vec[end]);
-
-    // Returning the pivot index
-    return i+1;
-}
-
-void quicksortSeq(int* vec, int start, int end){
-    if (start >= end) // Base case: one or less elements in vector
-        return;
-    
-    int pivotIdx = partition(vec, start, end);
-    quicksortSeq(vec, start, pivotIdx-1);
-    quicksortSeq(vec, pivotIdx+1, end);
 }
 
 int main(int argc, char *argv[]) {
-    int nthreads,n,randomNumber;
-    int flag=0;
-    int temp=0;
-    int number1=0;
-    int number2=0;
+    int nthreads, n, orderOption;
+    char showVectors = 0;
+    double startTime, endTime;
     vec_t* queue;
+    int* ordered_vec;
 
-    srand(time(NULL));
+    setRandomSeed();
 
-    if (argc != 3) {
-        printf("Use: %s <number of threads> <number of elements>\n", argv[0]);
+    if (argc < 4) {
+        printf("Use: %s <number of threads> <number of elements> <order option> <print? (OPTIONAL)>\n", argv[0]);
+        printf("Order options: (0) increasing, (1) decreasing, (2) random\n");
         return 1;
     }
+    
     nthreads = atoi(argv[1]);
     n = atoi(argv[2]);
+    orderOption = atoi(argv[3]);
+    if (argc >= 5)
+        showVectors = atoi(argv[4]);
     
     sem_init(&global_mutex,0,nthreads);
 
-    global_vec=(int*) malloc(sizeof(int)*n);
-    for (int i = 0; i < n; i++) {
-        randomNumber = rand() % 1000;
-        global_vec[i]=randomNumber;
-        printf("%i | ",global_vec[i]);
+    ordered_vec = makeOrderedVector(n);
+    if (!ordered_vec){
+        printf("Couldn't allocate ordered vector!\n");
+        return 1;
     }
-    printf("\n");
+
+    global_vec = makeCopyVector(ordered_vec, n);
+    if (!global_vec){
+        printf("Couldn't allocate global vector!\n");
+        return 1;
+    }
+
+    switch (orderOption){
+        case INCREASING:
+            break;
+        case DECREASING:
+            reverse(global_vec, n);
+            break;
+        case RANDOM:
+            shuffle(global_vec, n);
+            break;
+        default:
+            printf("Invalid order option %d!\n", orderOption);
+            printf("Order options: (0) increasing, (1) decreasing, (2) random\n");
+            return 1;
+    }
+
+    if (showVectors){
+        printf("Original: ");
+        printVector(global_vec, n);
+        printf("\n");
+    }
+
+    GET_TIME(startTime);
+
     queue=create_queue(0,n-1,nthreads);
     pthread_t *threads = (pthread_t *)malloc(nthreads * sizeof(pthread_t));
     for (int i = 0; i < nthreads; i++) {
         pthread_create(&threads[i], NULL, quicksort, (void*)queue);
     }
-    printf("Creation finished!\n");
+    //printf("Creation finished!\n");
 
     for (int i = 0; i < nthreads; i++) {
         pthread_join(threads[i], NULL);
     }
-    printf("Join finished!\n");
+    //printf("Join finished!\n");
 
-    for (int i = 0; i < n-1; i++) {
+    GET_TIME(endTime);
 
-        if(global_vec[i]>global_vec[i+1]){
-            flag=1;
-            temp=i;
-            number1=global_vec[i];
-            number2=global_vec[i+1];
-        }
-        printf("%i | ",global_vec[i]);
-    }
-    printf("%i | ",global_vec[n-1]);
-    printf("\n");
-    if(flag){
-        printf("Error, order was wrong on %i : %i > %i\n",temp,number1,number2);
+    if (showVectors){
+        printf("Ordered: ");
+        printVector(global_vec, n);
+        printf("\n");
     }
 
+    if (areEqualVectors(ordered_vec, global_vec, n))
+        printf("The original vector was sorted successfully! :)\n");
+    else
+        printf("The sorting of original vector has failed! :(\n");
+
+    printf("Time to sort: %lf s\n", endTime - startTime);
+
+    free(ordered_vec);
     free(global_vec);
     free(threads);
     free(queue);
+
     return 0;
 }
