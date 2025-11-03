@@ -2,10 +2,23 @@
 #include <pthread.h>
 #include "task.h"
 
+// Returns a random integer on the interval [min, max].
+int randInt(int min, int max){
+  return (rand() % (max - min + 1)) + min;
+}
+
+// Swaps two integers in memory.
+void swapInts(int* a, int* b){
+  int temp;
+  temp = *a;
+  *a = *b;
+  *b = temp;
+}
+
 // Makes a new task.
 // Returns a pointer to the task in success, NULL if an error occurred.
-TASK makeTask(int* vector, int startSeg, int endSeg){
-  if (startSeg < 0 || endSeg < 0)
+TASK makeTask(int* vector, int start, int end){
+  if (start < 0 || end < 0)
     return NULL;
   
   task_t* newTask = (task_t*)malloc(sizeof(task_t));
@@ -13,14 +26,18 @@ TASK makeTask(int* vector, int startSeg, int endSeg){
     return NULL;
   
   newTask->vector = vector;
-  newTask->startSeg = startSeg;
-  newTask->endSeg = endSeg;
-  // newTask->i = startSeg - 1;
-  // newTask->j = startSeg;
+  newTask->start = start;
+  newTask->end = end;
+  newTask->i = start - 1;
+  newTask->j = start;
+
+  // Already swapping the random pivot to the end of vector
+  int pivotIdx = randInt(start, end);
+  swapInts(&vector[pivotIdx], &vector[end]);
 
   // Initialization of locks & condition variables
-  if (pthread_mutex_init(&newTask->controlLock, NULL)
-      /* ... */){
+  if (pthread_mutex_init(&newTask->controlLock, NULL) ||
+      pthread_mutex_init(&newTask->domainLock, NULL)){
     free(newTask);
     return NULL;
   }
@@ -32,12 +49,13 @@ TASK makeTask(int* vector, int startSeg, int endSeg){
 void destroyTask(TASK task){
   // Destroy locks & condition variables
   pthread_mutex_destroy(&task->controlLock);
-  // ...
+  pthread_mutex_destroy(&task->domainLock);
   
   free(task);
 }
 
 // Checks if a given thread executing a task is the last one alive in it.
+// WARNING: User must not modify this!
 char isLastThreadInTask(TASK task){
   if (!task)
     return 0;
@@ -54,6 +72,7 @@ char isLastThreadInTask(TASK task){
 }
 
 // Signals that a thread finished its execution in a task.
+// WARNING: User must not modify this!
 void finishTask(TASK task){
   if (!task)
     return;
