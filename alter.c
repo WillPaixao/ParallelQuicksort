@@ -147,6 +147,49 @@ void* quicksort(void* args){
     }
 }
 
+int randInt(int min, int max){
+    return (rand() % (max - min + 1)) + min;
+}
+
+void swapInts(int* a, int* b){
+    int temp;
+    temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+int partition(int* vec, int start, int end){
+    int i; // Index of last element to the left side of pivot
+    int pivotIdx = randInt(start, end);  // Randomizing the pivot selection
+    int pivot = vec[pivotIdx];
+
+    // Putting the random pivot at the end of vector
+    swapInts(&vec[pivotIdx], &vec[end]);
+
+    i = start-1;
+    for (int j = start; j < end; j++){  // Iterating through the vector
+        if (vec[j] < pivot){  // If element belongs to left side of pivot...
+            i++;              // ... make more space to it...
+            swapInts(&vec[i], &vec[j]); // ... and put it into that place
+        }
+    }
+
+    // The index after i has to be the pivot
+    swapInts(&vec[i+1], &vec[end]);
+
+    // Returning the pivot index
+    return i+1;
+}
+
+void quicksortSeq(int* vec, int start, int end){
+    if (start >= end) // Base case: one or less elements in vector
+        return;
+    
+    int pivotIdx = partition(vec, start, end);
+    quicksortSeq(vec, start, pivotIdx-1);
+    quicksortSeq(vec, pivotIdx+1, end);
+}
+
 int main(int argc, char *argv[]) {
     int nthreads,n,randomNumber;
     int flag=0;
