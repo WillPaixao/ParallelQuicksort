@@ -148,7 +148,9 @@ void* quicksort(void* args){
         if(global_vec[local_arrow]<global_vec[vec->end]){
             //printf("changing order, %i<%i\n",global_vec[local_arrow],global_vec[vec->end]);
             if(local_arrow==vec->i){
+                sem_wait(&vec->mutex);
                 vec->i++;
+                sem_post(&vec->mutex);
                 continue;
             }
 
