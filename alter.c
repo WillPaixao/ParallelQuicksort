@@ -57,6 +57,26 @@ void create_thread(int start,int i, int end, int nthreads){
         free(queue1);
         return;
     }
+    if(i==start){
+        queue1=create_queue(start+1,end,nthreads);
+
+        //printf("Creation! Case 1\n");
+
+        pthread_t *threads1 = (pthread_t *)malloc(nthreads * sizeof(pthread_t));
+        for (int i = 0; i < nthreads; i++) {
+            pthread_create(&threads1[i], NULL, quicksort, (void*)queue1);
+        }
+        //printf("Creation finished! Case 1\n");
+
+        for (int i = 0; i < nthreads; i++) {
+            pthread_join(threads1[i], NULL);
+        }
+        //printf("Join finished!\n");
+
+        free(threads1);
+        free(queue1);
+        return;
+    }
 
     vec_t* queue2;
 
