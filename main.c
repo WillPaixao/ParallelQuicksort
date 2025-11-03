@@ -16,71 +16,63 @@ enum ORDER {
   RANDOM
 };
 
-void quicksort(TASK task, int taskTID, POOL pool){
-  int* vec = task->vector;
-  int start = task->start;
-  int end = task->end;
-  int pivot = vec[end]; // Random pivot is already at the end
-  int jLocal;
-  int iLocal;
+int partition(int* vec, int start, int end){
+  int i; // Index of last element to the left side of pivot
+  int pivotIdx = randInt(start, end);  // Randomizing the pivot selection
+  int pivot = vec[pivotIdx];
 
-  int* iPtr = &task->i;
-  int* jPtr = &task->j;
-  pthread_mutex_t* lockPtr = &task->domainLock;
+  // Putting the random pivot at the end of vector
+  swapInts(&vec[pivotIdx], &vec[end]);
 
-  while (1){
-    pthread_mutex_lock(lockPtr);
-    jLocal = (*jPtr)++; // Copying current j locally and incrementing for the next worker
-    pthread_mutex_unlock(lockPtr);
-
-    // Current j is already out of bounds
-    if (jLocal >= end){
-      // Last thread in task is responsible for ending it
-      if (isLastThreadInTask(task)){
-        // Swaps pivot into its designated destination
-        int pivotIdx = *iPtr;
-        swapInts(&vec[pivotIdx], &vec[end]);
-
-        //char isBaseCase = 1; // Flag indicating if this thread falls into a base case
-
-        // Makes the recursive calls according to pivot index
-        // In making a recursive call, this worker is certainly not in a base case
-        if (pivotIdx-1 > start){
-          executeTask(makeTask(vec, start, pivotIdx-1), pool);
-          //isBaseCase = 0;
-        }
-        if (pivotIdx+1 < end){
-          executeTask(makeTask(vec, pivotIdx+1, end), pool);
-          //isBaseCase = 0;
-        }
-
-        // If in base case and is the last thread active in the entire pool...
-        if (/*isBaseCase &&*/ isLastThreadInPool(pool))
-          shutdownPool(pool); // ... the work has been done
-
-        destroyTask(task);
-      }
-      else
-        finishTask(task); // If this is not the last thread in task, just signal that finished it 
-      
-      return; // In both cases, return from this function
-    }
-
-    // If j is not out of bounds...
-    if (vec[jLocal] < pivot){ // ... we need to check if a swap is needed
-      pthread_mutex_lock(lockPtr);
-      iLocal = (*iPtr)++;
-      pthread_mutex_unlock(lockPtr);
-      
-      // Indexes are local
-      swapInts(&vec[iLocal], &vec[jLocal]);
+  i = start-1;
+  for (int j = start; j < end; j++){  // Iterating through the vector
+    if (vec[j] < pivot){  // If element belongs to left side of pivot...
+      i++;              // ... make more space to it...
+      swapInts(&vec[i], &vec[j]); // ... and put it into that place
     }
   }
+
+  // The index after i has to be the pivot
+  swapInts(&vec[i+1], &vec[end]);
+
+  // Returning the pivot index
+  return i+1;
+}
+
+void quicksort(TASK task, int taskTID, POOL pool){
+  int start = task->start;
+  int end = task->end;
+  int* vec = task->vector;
+  
+  logMessage("Task (s=%d, d=%d): Received task\n", start, end);
+
+  if (start >= end){ // Base case: one or less elements in vector
+    if (isLastThreadInPool(pool))
+      shutdownPool(pool);
+    return;
+  }
+  
+  logMessage("Task (s=%d, d=%d): Not base case, before partition\n", start, end);
+
+  int pivotIdx = partition(vec, start, end);
+  //char isBaseCase = 1;
+
+  logMessage("Task (s=%d, d=%d): After partition\n", start, end);
+
+  if (pivotIdx-1 > start){
+    executeTask(makeTask(vec, start, pivotIdx-1), pool);
+    //logMessage("Task (s=%d, d=%d): Calling \n", start, end);
+  }
+  if (pivotIdx+1 < end){
+    executeTask(makeTask(vec, pivotIdx+1, end), pool);
+    //logMessage("Task (s=%d, d=%d): After partition\n", start, end);
+  }
+  destroyTask(task);
 }
 
 int main(int argc, char* argv[]){
   int nThreads;
-  int maxWorkers;
+  //int maxWorkers;
   int vecLen;
   int* orderedVec;
   int* vec;
@@ -95,22 +87,22 @@ int main(int argc, char* argv[]){
 
   setRandomSeed();
   
-  if (argc < 5){
-    printf("ERROR: Arguments missing! Try %s <nº threads> <nº max workers per task> <vector length> <order option> <print? (OPTIONAL)>\n", argv[0]);
+  if (argc < 4){
+    printf("ERROR: Arguments missing! Try %s <nº threads> <vector length> <order option> <print? (OPTIONAL)>\n", argv[0]);
     printf("Order options: (0) increasing, (1) decreasing, (2) random\n");
     exit(EXIT_FAILURE);
   }
 
   nThreads = atoi(argv[1]);
-  maxWorkers = atoi(argv[2]);
-  vecLen = atoi(argv[3]);
-  orderOption = atoi(argv[4]);
-  if (argc >= 6)
-    showVectors = atoi(argv[5]);
+  //maxWorkers = atoi(argv[2]);
+  vecLen = atoi(argv[2]);
+  orderOption = atoi(argv[3]);
+  if (argc >= 5)
+    showVectors = atoi(argv[4]);
 
   if (nThreads <= 0 ||
-      maxWorkers <= 0 ||
-      maxWorkers > nThreads ||
+      //maxWorkers <= 0 ||
+      //maxWorkers > nThreads ||
       vecLen <= 0){
     printf("ERROR: Invalid arguments!\n");
     exit(EXIT_FAILURE);
@@ -151,7 +143,7 @@ int main(int argc, char* argv[]){
 
   GET_TIME(startTime);
 
-  pool = makePool(nThreads, maxWorkers, quicksort);
+  pool = makePool(nThreads, 1, quicksort);
 
   task = makeTask(vec, 0, vecLen-1);
   executeTask(task, pool);
@@ -177,61 +169,89 @@ int main(int argc, char* argv[]){
   return 0;
 }
 
-// First try of quicksort...
+// Second try of quicksort...
 /*
 void quicksort(TASK task, int taskTID, POOL pool){
   int* vec = task->vector;
   int start = task->start;
   int end = task->end;
   int pivot = vec[end]; // Random pivot is already at the end
+  int jLocal;
+  int iLocal;
 
-  int* iPtr = &task->i; // Starts as start-1
-  int* jPtr = &task->j; // Starts as start
+  int* iPtr = &task->i;
+  int* jPtr = &task->j;
   pthread_mutex_t* lockPtr = &task->domainLock;
-  int iCopy;
-  int jCopy;
 
-  if (start >= end){ // Base case
-    if (isLastThreadInPool(pool)){
-      shutdownPool(pool);
-      destroyTask(task);
-    }
-    finishTask(task);
-    return;
-  }
-
+  logMessage("Task (s=%d, d=%d): Thread %d started\n", start, end, taskTID);
   while (1){
     pthread_mutex_lock(lockPtr);
-    iCopy = *iPtr;
-    jCopy = *jPtr;
+    jLocal = *jPtr; // Copying current j locally...
+    (*jPtr)++; //... and incrementing for the next worker
     pthread_mutex_unlock(lockPtr);
 
-    if (jCopy < end){ // If is still iterating
-      if (vec[jCopy] < pivot){
-        swapInts(&vec[iCopy+1], &vec[jCopy]);
+    logMessage("Task (s=%d, d=%d): jLocal: %d\n", start, end, jLocal);
+
+    // Current j is already out of bounds
+    if (jLocal >= end){
+      // Last thread in task is responsible for ending it
+      if (isLastThreadInTask(task)){
+        // Swaps pivot into its designated destination
+        //pthread_mutex_lock(lockPtr);
+        int pivotIdx = *iPtr;
+        //pthread_mutex_unlock(lockPtr);
         
+        logMessage("Task (s=%d, d=%d): pivotIdx: %d\n", start, end, pivotIdx);
+
+        swapInts(&vec[pivotIdx], &vec[end]);
+
+        char isBaseCase = 1; // Flag indicating if this thread falls into a base case
+
+        // Makes the recursive calls according to pivot index
+        // In making a recursive call, this worker is certainly not in a base case
+        if (pivotIdx-1 > start){
+          logMessage("Task (s=%d, d=%d): Calling (s=%d, d=%d)\n", start, end, start, pivotIdx-1);
+          executeTask(makeTask(vec, start, pivotIdx-1), pool);
+          isBaseCase = 0;
+        }
+        if (pivotIdx+1 < end){
+          logMessage("Task (s=%d, d=%d): Calling (s=%d, d=%d)\n", start, end, pivotIdx+1, end);
+          executeTask(makeTask(vec, pivotIdx+1, end), pool);
+          isBaseCase = 0;
+        }
+
+        // If in base case and is the last thread active in the entire pool...
+        if (isBaseCase && isLastThreadInPool(pool))
+          shutdownPool(pool); // ... the work has been done
+
+        destroyTask(task);
+      }
+      else 
+        finishTask(task); // If this is not the last thread in task, just signal that finished it 
+      
+      return; // In both cases, return from this function
+    }
+
+    // If j is not out of bounds...
+    if (vec[jLocal] < pivot){ // ... we need to check if a swap is needed
+      if (*iPtr >= jLocal){
         pthread_mutex_lock(lockPtr);
         (*iPtr)++;
-        (*jPtr)++;
         pthread_mutex_unlock(lockPtr);
+        continue;
       }
-      else {
-        pthread_mutex_lock(lockPtr);
-        (*jPtr)++;
-        pthread_mutex_unlock(lockPtr);
-      }
-    }
-    else if (isLastThreadInTask(task)) { // If it is the last iteration
-      iCopy = *iPtr;
-      swapInts(&vec[iCopy], &vec[jCopy]);
+      
+      pthread_mutex_lock(lockPtr);
+      iLocal = *iPtr;
+      (*iPtr)++;
+      pthread_mutex_unlock(lockPtr);
 
-      executeTask(makeTask(vec, start, iCopy-1), pool);
-      executeTask(makeTask(vec, iCopy+1, end), pool);
-      break;
+      logMessage("Task (s=%d, d=%d): Swapping i=%d with j=%d\n", start, end, iLocal, jLocal);
+
+      // Indexes are local
+      swapInts(&vec[iLocal], &vec[jLocal]);
     }
   }
-
-  finishTask(task);
 }
 */
 

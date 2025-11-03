@@ -16,16 +16,16 @@ TASK makeTask(int* vector, int start, int end){
   newTask->vector = vector;
   newTask->start = start;
   newTask->end = end;
-  newTask->i = start;
-  newTask->j = start;
+  //newTask->i = start-1;
+  //newTask->j = start;
 
   // Already swapping the random pivot to the end of vector
   int pivotIdx = randInt(start, end);
   swapInts(&vector[pivotIdx], &vector[end]);
 
   // Initialization of locks & condition variables
-  if (pthread_mutex_init(&newTask->controlLock, NULL) ||
-      pthread_mutex_init(&newTask->domainLock, NULL)){
+  if (pthread_mutex_init(&newTask->controlLock, NULL) /*||
+      pthread_mutex_init(&newTask->domainLock, NULL)*/){
     free(newTask);
     return NULL;
   }
@@ -37,7 +37,7 @@ TASK makeTask(int* vector, int start, int end){
 void destroyTask(TASK task){
   // Destroy locks & condition variables
   pthread_mutex_destroy(&task->controlLock);
-  pthread_mutex_destroy(&task->domainLock);
+  //pthread_mutex_destroy(&task->domainLock);
   
   free(task);
 }
