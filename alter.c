@@ -149,6 +149,10 @@ void* quicksort(void* args){
 
 int main(int argc, char *argv[]) {
     int nthreads,n,randomNumber;
+    int flag=0;
+    int temp=0;
+    int number1=0;
+    int number2=0;
     vec_t* queue;
 
     srand(time(NULL));
@@ -181,14 +185,21 @@ int main(int argc, char *argv[]) {
     }
     printf("Join finished!\n");
 
-    for (int i = 0; i < n; i++) {
+    for (int i = 0; i < n-1; i++) {
 
-        if(global_vec[i]<global_vec[n-1] && global_vec[i+1]>global_vec[n-1]){
-            //printf("Maybe Correct exec, if once\n");
+        if(global_vec[i]>global_vec[i+1]){
+            flag=1;
+            temp=i;
+            number1=global_vec[i];
+            number2=global_vec[i+1];
         }
         printf("%i | ",global_vec[i]);
     }
+    printf("%i | ",global_vec[n-1]);
     printf("\n");
+    if(flag){
+        printf("Error, order was wrong on %i : %i > %i\n",temp,number1,number2);
+    }
 
     free(global_vec);
     free(threads);
