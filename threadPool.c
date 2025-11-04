@@ -12,24 +12,6 @@ POOL populatePool(POOL pool);
 void* threadFunc(void* args);
 int recruitThreads(POOL pool, TASK task);
 
-// Thread pool
-typedef struct pool_s {
-  // User defined parameters
-  int nThreads;                       // Number of threads in the pool
-  int maxWorkers;                     // Maximum number of workers that can be allocated to a single task
-  void (*taskFunc)(TASK, int, POOL);  // Function that operates on data of a TASK
-  
-  // Control variables
-  QUEUE queue;                        // Internal task queue
-  pthread_t* tids;                    // Array of thread IDs in the pool
-  int nAvailableThreads;              // Number of current sleeping threads
-  char shutdown;                      // Indicator of pool shutdown
-
-  // Locks & condition variables
-  sem_t sleeping;                     // Semaphore that implements on-demand task picking
-  pthread_mutex_t lock;               // Mutex lock to inhibit data racing
-} pool_t;
-
 // Makes a thread pool.
 // Returns a pointer to the pool in success, NULL if an error occurred.
 // OBS.: The parameter taskFunc must be a pointer to a function that expects a task and a local task TID as arguments.
@@ -171,10 +153,7 @@ void executeTask(TASK task, POOL pool){
   putTask(task, pool->queue);
   logMessage("Task (s=%d, d=%d) was put onto the queue!\n", task->startSeg, task->endSeg);
 
-  //pthread_mutex_lock(&pool->lock);
-  // pool->nAvailableThreads--;
   sem_post(&pool->sleeping);
-  //pthread_mutex_unlock(&pool->lock);
 }
 
 // Recruits other threads in the pool to help in a task, signaling them.
@@ -189,7 +168,6 @@ int recruitThreads(POOL pool, TASK task){
   int maxWorkers = pool->maxWorkers - 1; // Maximum number of extra workers allocatable
   int nAllocatedWorkers = min(nAvailableThreads, maxWorkers);
 
-  // pool->nAvailableThreads -= nAllocatedWorkers;
   for (int i = 0; i < nAllocatedWorkers; i++){
     logMessage("Thread %d recruited for task!\n", i+1);
     sem_post(sleepingPtr);
@@ -206,13 +184,10 @@ void shutdownPool(POOL pool){
   if (!pool)
     return;
 
-  pthread_mutex_t* lockPtr = &pool->lock;
   sem_t* sleepingPtr = &pool->sleeping;
   int nThreads = pool->nThreads; 
 
-  pthread_mutex_lock(lockPtr);
   pool->shutdown = 1;
-  pthread_mutex_unlock(lockPtr);
 
   for (int i = 0; i < nThreads; i++)
     sem_post(sleepingPtr); // Signaling all threads to prepare for leaving
@@ -246,13 +221,10 @@ char isLastThreadInPool(POOL pool){
   if (!pool)
     return 0;
   
-  pthread_mutex_t* lockPtr = &pool->lock;
   char ret = 0;
 
-  pthread_mutex_lock(lockPtr);
   if (pool->nAvailableThreads == (pool->nThreads-1))
     ret = 1;
-  pthread_mutex_unlock(lockPtr);
 
   return ret;
 }

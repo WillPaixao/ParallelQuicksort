@@ -16,16 +16,16 @@ TASK makeTask(int* vector, int start, int end){
   newTask->vector = vector;
   newTask->start = start;
   newTask->end = end;
-  //newTask->i = start-1;
-  //newTask->j = start;
+  newTask->i = start;
+  newTask->j = start;
 
   // Already swapping the random pivot to the end of vector
   int pivotIdx = randInt(start, end);
   swapInts(&vector[pivotIdx], &vector[end]);
 
   // Initialization of locks & condition variables
-  if (pthread_mutex_init(&newTask->controlLock, NULL) /*||
-      pthread_mutex_init(&newTask->domainLock, NULL)*/){
+  if (pthread_mutex_init(&newTask->controlLock, NULL) ||
+      pthread_mutex_init(&newTask->domainLock, NULL)){
     free(newTask);
     return NULL;
   }
@@ -37,7 +37,7 @@ TASK makeTask(int* vector, int start, int end){
 void destroyTask(TASK task){
   // Destroy locks & condition variables
   pthread_mutex_destroy(&task->controlLock);
-  //pthread_mutex_destroy(&task->domainLock);
+  pthread_mutex_destroy(&task->domainLock);
   
   free(task);
 }
@@ -47,15 +47,9 @@ void destroyTask(TASK task){
 char isLastThreadInTask(TASK task){
   if (!task)
     return 0;
-  
-  pthread_mutex_t* lockPtr = &task->controlLock;
   char ret = 0;
-  
-  pthread_mutex_lock(lockPtr);
   if (task->nFinishedWorkers == (task->nWorkers-1))
     ret = 1;
-  pthread_mutex_unlock(lockPtr);
-
   return ret;
 }
 
@@ -64,10 +58,5 @@ char isLastThreadInTask(TASK task){
 void finishTask(TASK task){
   if (!task)
     return;
-  
-  pthread_mutex_t* lockPtr = &task->controlLock;
-
-  pthread_mutex_lock(lockPtr);
   task->nFinishedWorkers++;   // Signals task that this thread finished its work
-  pthread_mutex_unlock(lockPtr);
 }

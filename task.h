@@ -7,11 +7,11 @@ typedef struct {
   int* vector;
   int start;
   int end;
-  //int i;
-  //int j;
+  int i;
+  int j;
   
   // Locks & condition variables
-  //pthread_mutex_t domainLock;
+  pthread_mutex_t domainLock;
 
   // Control variables (obligatory!)
   int nWorkers;
